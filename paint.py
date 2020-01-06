@@ -105,34 +105,20 @@ class paintWindow:
 
 
     def drawLine(self, eventY, eventX):
-        self.__imgDraw.line([self.__clickX, self.__clickY, eventX, eventY], fill=self.__color)
-        # Implement fix direction again:
-        """
-        startY = self.__click[0]
-        startX = self.__click[1]
+        startY = self.__clickY
+        startX = self.__clickX
         endY = min(max(eventY, 0), self.__imgHgt)
         endX = min(max(eventX, 0), self.__imgWdh)
         dY = abs(startY - eventY)
         dX = abs(startX - eventX)
 
         if dY >= 2*dX:  # Line: |
-            endPoints = [startY, endY]
-            for y in range(min(endPoints) - self.__thickness//2, max(endPoints) + self.__thickness//2 + 1):
-                for x in range(startX - self.__thickness//2, startX + self.__thickness//2 + 1):
-                    if 0 <= x < self.__imgWdh:
-                        if (y >= 0) & (y < self.__imgHgt):
-                            self.__imgArSketch[y][x] = self.__color
+            self.__imgDraw.line([startX, startY, startX, endY], fill=self.__color, width=self.__thickness)
         elif dX >= 2*dY:  # Line: -
-            endPoints = [startX, endX]
-            for x in range(min(endPoints) - self.__thickness//2, max(endPoints) + self.__thickness//2 + 1):
-                for y in range(startY - self.__thickness//2, startY + self.__thickness//2 + 1):
-                    if 0 <= y < self.__imgHgt:
-                        if (x >= 0) & (x < self.__imgWdh):
-                            self.__imgArSketch[y][x] = self.__color
+            self.__imgDraw.line([startX, startY, endX, startY], fill=self.__color, width=self.__thickness)
 
         else:  # Line: / or \
             length = round((dY + dX) / 2)
-            rToSkin = self.__thickness//2 + 1
             backslash = False
             if (endY > startY and endX > startX) or (endY < startY and endX < startX):
                 backslash = True  # Line: \ else /
@@ -141,29 +127,10 @@ class paintWindow:
             elif endY < startY:
                 startY, startX = startY - length, startX + length
 
-            for i in range(rToSkin):  # Draws: ^
-                y = startY - rToSkin + i
-                if 0 <= y < self.__imgHgt:
-                    for x in range(startX - i, startX + i + 1):
-                        if 0 <= x < self.__imgWdh:
-                            self.__imgArSketch[y][x] = self.__color
+            endY = startY + length
+            endX = startX + length if backslash else startX - length
+            self.__imgDraw.line([startX, startY, endX, endY], fill=self.__color, width=self.__thickness)
 
-            for i in range(length + 1):  # Draws: \\
-                y = startY + i
-                if 0 <= y < self.__imgHgt:
-                    diff = i if backslash else -i
-                    for x in range(startX - rToSkin + diff, startX + rToSkin + diff + 1):
-                        if 0 <= x < self.__imgWdh:
-                            self.__imgArSketch[y][x] = self.__color
-
-            for i in range(rToSkin):  # Draws: v
-                y = startY + length + rToSkin - i
-                if 0 <= y < self.__imgHgt:
-                    diff = length if backslash else -length
-                    for x in range(startX + diff - i, startX + diff + i + 1):
-                        if 0 <= x < self.__imgWdh:
-                            self.__imgArSketch[y][x] = self.__color
-                            """
 
     def resizeToHalfScreen(self):
         screenwidth = self.__root.winfo_screenwidth()
