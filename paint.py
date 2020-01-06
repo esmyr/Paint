@@ -3,7 +3,7 @@ Made by Espen Myrset
 """
 
 import numpy as np
-from PIL import Image as Im, ImageTk
+from PIL import Image as Im, ImageTk, ImageDraw
 from tkinter import *
 
 """ Classes """
@@ -22,26 +22,26 @@ class paintWindow:
         self.__imageFrame.grid(column=1, row=0, rowspan=2, sticky=(W, N, E, S))
 
         self.__path = path
-        self.__img = Im.open(self.__path).convert("RGB")  # PIL image object that is used for np and canvas
-        self.__imgAr = np.array(self.__img)  # makes RGB array from image [row][col][R, G, B (pixels)]
-        self.__imgArSketch = self.__imgAr  # temporary image when drawing
-        self.__photoImg = ImageTk.PhotoImage(self.__img)  # used in canvas (needs to be saved as variable)
+        self.__img = Im.open(self.__path).convert("RGB")  # main image (PIL image object)
+        self.__imgSketch = self.__img.copy()  # temporary image when drawing
+        self.__imgDraw = ImageDraw.Draw(self.__imgSketch)  # draw reference that changes image object
+        self.__photoImg = ImageTk.PhotoImage(self.__imgSketch)  # used in canvas (needs to be saved as variable)
 
-        self.__imgHgt = len(self.__imgAr)
-        self.__imgWdh = len(self.__imgAr[0])
+        self.__imgWdh, self.__imgHgt = self.__img.size
 
         # Tools
-        self.__zoom = 1
+        self.__zoom = None
         self.resizeToHalfScreen()
-        self.__click = [0, 0]  # [y, x]
+        self.__clickY = 0
+        self.__clickX = 0
         self.__pressing = False
         self.__thickness = 5
-        self.__color = [255, 0, 0]
+        self.__color = (255, 0, 0)
 
         # Tool icons
         self.__TNewBtn = Button(self.__stcToolFrame, text="N", command=None)
         self.__TOpenBtn = Button(self.__stcToolFrame, text="O", command=None)
-        self.__TSaveBtn = Button(self.__stcToolFrame, text="S", command=None)
+        self.__TSaveBtn = Button(self.__stcToolFrame, text="S", command=self.save)
 
         self.autoGrid(self.__stcToolFrame, 32, [[self.__TNewBtn, self.__TOpenBtn, self.__TSaveBtn]])
 
@@ -59,23 +59,24 @@ class paintWindow:
 
     def mousePressHandler(self, event=None):
         self.__pressing = True
-        self.__click = [event.y//self.__zoom, event.x//self.__zoom]
+        self.__clickY = event.y//self.__zoom
+        self.__clickX = event.x//self.__zoom
 
-    def mouseMoveHandler(self, event=None):
+    def mouseMoveHandler(self, event=None):  # makes and displays a new image whenever mouse is moving
         if self.__pressing:
-            self.__imgArSketch = self.__imgAr.copy()
+            self.__imgSketch = self.__img.copy()
+            self.__imgDraw = ImageDraw.Draw(self.__imgSketch)
             self.drawLine(event.y//self.__zoom, event.x//self.__zoom)
             self.updateImage()
 
-    def mouseReleaseHandler(self, event=None):
+    def mouseReleaseHandler(self, event=None):  # saves changes
         self.__pressing = False
-        self.__imgAr = self.__imgArSketch  # saves changes
+        self.__img = self.__imgSketch.copy()
 
-    def updateImage(self):  # transfers array to image that is used in canvas
-        self.__img = Im.fromarray(self.__imgArSketch, 'RGB')
-        # Resample=0 avoids filter when zooming
-        self.__img = self.__img.resize((self.__imgWdh*self.__zoom, self.__imgHgt*self.__zoom), resample=0)
-        self.__photoImg = ImageTk.PhotoImage(self.__img)  # used in canvas
+    def updateImage(self):  # resize and display sketch image
+        # PhotoImage used in canvas (resample=0 avoids filter when zooming/resizing)
+        self.__photoImg = ImageTk.PhotoImage(self.__imgSketch.resize((
+            self.__imgWdh*self.__zoom, self.__imgHgt*self.__zoom), resample=0))
         self.__imgCanvas.create_image(0, 0, image=self.__photoImg, anchor=NW)  # insert image in upper left corner
 
     def autoGrid(self, frame, colSize, gridList):
@@ -100,10 +101,13 @@ class paintWindow:
                 .grid(column=col, row=lastRow)
 
     def save(self):
-        self.__img.save("{}_new".format(self.__path))
+        self.__img.save("newImage.png")
 
 
     def drawLine(self, eventY, eventX):
+        self.__imgDraw.line([self.__clickX, self.__clickY, eventX, eventY], fill=self.__color)
+        # Implement fix direction again:
+        """
         startY = self.__click[0]
         startX = self.__click[1]
         endY = min(max(eventY, 0), self.__imgHgt)
@@ -159,6 +163,7 @@ class paintWindow:
                     for x in range(startX + diff - i, startX + diff + i + 1):
                         if 0 <= x < self.__imgWdh:
                             self.__imgArSketch[y][x] = self.__color
+                            """
 
     def resizeToHalfScreen(self):
         screenwidth = self.__root.winfo_screenwidth()
