@@ -5,7 +5,6 @@ Made by Espen Myrset
 import numpy as np
 from PIL import Image as Im, ImageTk
 from tkinter import *
-from math import sqrt
 
 """ Classes """
 class paintWindow:
@@ -14,12 +13,13 @@ class paintWindow:
         self.__root.title("Paint")
         self.__root.geometry('+0+0')  # Top left position
 
-        self.__toolFrame = Frame(self.__root)
-        self.__toolFrame.grid(column=0, row=0)
-        self.__imageFrame = Frame(self.__root)
-        self.__imageFrame.grid(column=1, row=0)
-
-        Canvas(self.__toolFrame, width=96, bd=0, highlightthickness=0).grid()  # Span for tool frame
+        # Root consists of these frames
+        self.__stcToolFrame = Frame(self.__root)  # For static tools
+        self.__stcToolFrame.grid(column=0, row=0, sticky=(W, N, E, S))
+        self.__dynToolFrame = Frame(self.__root)  # For dynamic tools
+        self.__dynToolFrame.grid(column=0, row=1, sticky=(W, N, E, S))
+        self.__imageFrame = Frame(self.__root)  # For image
+        self.__imageFrame.grid(column=1, row=0, rowspan=2, sticky=(W, N, E, S))
 
         self.__path = path
         self.__img = Im.open(self.__path).convert("RGB")  # PIL image object that is used for np and canvas
@@ -38,23 +38,22 @@ class paintWindow:
         self.__thickness = 5
         self.__color = [255, 0, 0]
 
-        # Tool frame
-        iconsize = 32
-        self.__TNewBtn = Button(self.__toolFrame, text="N", command=None)
-        self.__TOpenBtn = Button(self.__toolFrame, text="O", command=None)
-        self.__TSaveBtn = Button(self.__toolFrame, text="S", command=None)
+        # Tool icons
+        self.__TNewBtn = Button(self.__stcToolFrame, text="N", command=None)
+        self.__TOpenBtn = Button(self.__stcToolFrame, text="O", command=None)
+        self.__TSaveBtn = Button(self.__stcToolFrame, text="S", command=None)
 
-        self.autoGrid([[self.__TNewBtn, self.__TOpenBtn, self.__TSaveBtn]])
+        self.autoGrid(self.__stcToolFrame, 32, [[self.__TNewBtn, self.__TOpenBtn, self.__TSaveBtn]])
 
         # bd and highlightthickness avoids edge around canvas
-        self.__canvas = Canvas(self.__imageFrame, height=self.__imgHgt*self.__zoom,
-                               width=self.__imgWdh*self.__zoom, bd=0, highlightthickness=0)
-        self.__canvas.grid()
+        self.__imgCanvas = Canvas(self.__imageFrame, height=self.__imgHgt*self.__zoom,
+                                  width=self.__imgWdh*self.__zoom, bd=0, highlightthickness=0)
+        self.__imgCanvas.grid()
         self.updateImage()
 
-        self.__canvas.bind("<Button-1>", self.mousePressHandler)  # right click
-        self.__canvas.bind("<Motion>", self.mouseMoveHandler)
-        self.__canvas.bind("<ButtonRelease>", self.mouseReleaseHandler)
+        self.__imgCanvas.bind("<Button-1>", self.mousePressHandler)  # right click
+        self.__imgCanvas.bind("<Motion>", self.mouseMoveHandler)
+        self.__imgCanvas.bind("<ButtonRelease>", self.mouseReleaseHandler)
 
         mainloop()
 
@@ -77,20 +76,28 @@ class paintWindow:
         # Resample=0 avoids filter when zooming
         self.__img = self.__img.resize((self.__imgWdh*self.__zoom, self.__imgHgt*self.__zoom), resample=0)
         self.__photoImg = ImageTk.PhotoImage(self.__img)  # used in canvas
-        self.__canvas.create_image(0, 0, image=self.__photoImg, anchor=NW)  # insert image in upper left corner
+        self.__imgCanvas.create_image(0, 0, image=self.__photoImg, anchor=NW)  # insert image in upper left corner
 
-    def autoGrid(self, gridList):
-        columns = 1
+    def autoGrid(self, frame, colSize, gridList):
+        # Determines number of columns
+        colMax = 1
         for list in gridList:
-            if len(list) > columns:
-                columns = len(list)
+            if len(list) > colMax:
+                colMax = len(list)
 
+        # Grids all columns
+        lastRow = 1
         for row, list in enumerate(gridList):
-            columnsLeft = columns
+            columnsLeft = colMax
             for col, element in enumerate(list):
                 span = columnsLeft // (len(list) - col)
                 columnsLeft = columnsLeft - span
                 element.grid(row=row, column=col, columnspan=span, sticky=(W, N, E, S))
+            lastRow += 1
+
+        for col in range(colMax):  # Insert canvas to make even column spacing and line at end of toolbar
+            Canvas(frame, width=colSize, height=3, bd=0, highlightthickness=0, bg="black")\
+                .grid(column=col, row=lastRow)
 
     def save(self):
         self.__img.save("{}_new".format(self.__path))
