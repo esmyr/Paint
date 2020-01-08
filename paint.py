@@ -13,13 +13,26 @@ class paintWindow:
         self.__root.title("Paint")
         self.__root.geometry('+0+0')  # Top left position
 
-        # Root consists of these frames
+        # Root consists of 3 frames
         self.__stcToolFrame = Frame(self.__root)  # For static tools
         self.__stcToolFrame.grid(column=0, row=0, sticky=(W, N, E, S))
         self.__dynToolFrame = Frame(self.__root)  # For dynamic tools
         self.__dynToolFrame.grid(column=0, row=1, sticky=(W, N, E, S))
         self.__imageFrame = Frame(self.__root)  # For image
         self.__imageFrame.grid(column=1, row=0, rowspan=2, sticky=(W, N, E, S))
+
+        # Frames for dynamic frame
+        self.__toolLine = Tool("Line", self.__dynToolFrame)
+        self.__TFreeHand = BooleanVar(value=False)
+        self.__TChkFreeHand = Checkbutton(self.__toolLine.getFrame(), text="Free hand", variable=self.__TFreeHand)
+        self.__TChkFreeHand.grid()
+
+        self.__toolRec = Tool("Rectangle", self.__dynToolFrame)
+        self.__TFillBox = BooleanVar(value=False)
+        self.__TChkFreeHand = Checkbutton(self.__toolRec.getFrame(), text="Fill", variable=self.__TFillBox)
+        self.__TChkFreeHand.grid()
+        # Grids preset tool
+        self.__toolSel = self.__toolRec.sel()
 
         # Saves path and filename
         if "/" in fileName:
@@ -37,24 +50,23 @@ class paintWindow:
 
         self.__imgWdh, self.__imgHgt = self.__img.size
 
-        # Tools
-        self.__toolSel = "L"  # L=Line, R=Rectangle, C=Circle,
+        # Tools (preset values)
         self.__zoom = None
-        self.resizeToHalfScreen()
-        self.__clickY = 0
-        self.__clickX = 0
+        self.resizeToHalfScreen()  # determines suitable zoom ratio
+        self.__clickY, self.__clickX = 0, 0
         self.__pressing = False
         self.__thickness = 5
         self.__color = (255, 0, 0)
 
-        # Tool icons
+        # Button icons
         self.__TBtnNew = Button(self.__stcToolFrame, text="N", command=None)  # Featured
         self.__TBtnOpen = Button(self.__stcToolFrame, text="O", command=None)  # Featured
         self.__TBtnSave = Button(self.__stcToolFrame, text="S", command=self.save)
         self.__TBtnSaveAs = Button(self.__stcToolFrame, text="SA", command=None)
         self.__TBtnUndo = Button(self.__stcToolFrame, text="U", command=self.undo)
-        self.__TBtnLine = Button(self.__stcToolFrame, text="L", command=lambda: self.changeTool("L"))
-        self.__TBtnRec = Button(self.__stcToolFrame, text="R", command=lambda: self.changeTool("R"))
+        # Tool icons
+        self.__TBtnLine = Button(self.__stcToolFrame, text="L", command=lambda: self.changeTool(self.__toolLine))
+        self.__TBtnRec = Button(self.__stcToolFrame, text="R", command=lambda: self.changeTool(self.__toolRec))
 
         self.autoGrid(self.__stcToolFrame, 32,
                       [[self.__TBtnNew, self.__TBtnOpen, self.__TBtnSave, self.__TBtnSaveAs],
@@ -87,9 +99,9 @@ class paintWindow:
 
             eventY = event.y//self.__zoom
             eventX = event.x//self.__zoom
-            if self.__toolSel == "L":
+            if self.__toolSel == self.__toolLine:
                 self.drawLine(eventY, eventX)
-            elif self.__toolSel == "R":
+            elif self.__toolSel == self.__toolRec:
                 self.drawRectangle(eventY, eventX)
             self.updateImage()
 
@@ -135,9 +147,8 @@ class paintWindow:
         self.updateImage()
 
     def changeTool(self, newTool):
-        self.__toolSel = newTool
-
-        # Update dynamic frame
+        self.__toolSel.unGrid()
+        self.__toolSel = newTool.sel()
 
     def drawLine(self, eventY, eventX):
         startY = self.__clickY
@@ -147,33 +158,58 @@ class paintWindow:
         dY = abs(startY - eventY)
         dX = abs(startX - eventX)
 
-        if dY >= 2*dX:  # Line: |
-            endX = startX
-        elif dX >= 2*dY:  # Line: -
-            endY = startY
+        if not self.__TFreeHand.get():
+            if dY >= 2*dX:  # Line: |
+                endX = startX
+            elif dX >= 2*dY:  # Line: -
+                endY = startY
 
-        else:  # Line: / or \
-            length = round((dY + dX) / 2)
-            backslash = False
-            if (endY > startY and endX > startX) or (endY < startY and endX < startX):
-                backslash = True  # Line: \ else /
-                if endY < startY:  # Changes point so that the upper point is drawn first
-                    startY, startX = startY - length, startX - length
-            elif endY < startY:
-                startY, startX = startY - length, startX + length
-            endY = startY + length
-            endX = startX + length if backslash else startX - length
+            else:  # Line: / or \
+                length = round((dY + dX) / 2)
+                backslash = False
+                if (endY > startY and endX > startX) or (endY < startY and endX < startX):
+                    backslash = True  # Line: \ else /
+                    if endY < startY:  # Changes point so that the upper point is drawn first
+                        startY, startX = startY - length, startX - length
+                elif endY < startY:
+                    startY, startX = startY - length, startX + length
+                endY = startY + length
+                endX = startX + length if backslash else startX - length
 
         self.__imgDraw.line([startX, startY, endX, endY], fill=self.__color, width=self.__thickness)
 
     def drawRectangle(self, eventY, eventX):
-        self.__imgDraw.rectangle([self.__clickX, self.__clickY, eventX, eventY], fill=self.__color, width=self.__thickness)
+        if self.__TFillBox.get():
+            fill = self.__color
+        else:
+            fill = None
+        self.__imgDraw.rectangle([self.__clickX, self.__clickY, eventX, eventY], fill=fill, outline=self.__color, width=self.__thickness)
 
     def resizeToHalfScreen(self):
         screenwidth = self.__root.winfo_screenwidth()
         screenheight = self.__root.winfo_screenheight()
         self.__zoom = round(max(1, min((screenheight / self.__imgHgt) // 2, (screenwidth / self.__imgWdh) // 2)))
 
+class Tool:
+    def __init__(self, name, parentFrame):
+        self.__name = name
+        self.__frame = Frame(parentFrame)
+
+    def getFrame(self):
+        return self.__frame
+
+    def grid(self):
+        self.__frame.grid(sticky=(W, N, E, S))
+
+    def unGrid(self):
+        self.__frame.grid_remove()
+
+    def sel(self):  # grids dynamic frame returns self when tool is selected
+        self.grid()
+        return self
+
+    def __str__(self):
+        return self.__name
 
 """ Functions """
 
