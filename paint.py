@@ -23,16 +23,21 @@ class paintWindow:
         self.__frameImage = Frame(self.__root)  # For image
         self.__frameImage.grid(column=1, row=0, rowspan=2, sticky=(W, N, E, S))
 
-        # Tools and widgets for dynamic frame
+        # Tools (and toolwidgets for dynamic frame)
         self.__toolLine = Tool("Line", self.__frameDynamic)
-        self.__propLineFree = BooleanVar(value=False)
-        self.__widgetLineFree = Checkbutton(self.__toolLine.getFrame(), text="Free hand", variable=self.__propLineFree)
-        self.__widgetLineFree.grid()
 
         self.__toolRec = Tool("Rectangle", self.__frameDynamic)
         self.__propRecFill = BooleanVar(value=False)
         self.__widgetRecFill = Checkbutton(self.__toolRec.getFrame(), text="Fill", variable=self.__propRecFill)
         self.__widgetRecFill.grid()
+
+        self.__toolCir = Tool("Circle", self.__frameDynamic)
+        self.__propCirFill = BooleanVar(value=False)
+        self.__widgetCirFill = Checkbutton(self.__toolCir.getFrame(), text="Fill", variable=self.__propCirFill)
+        self.__widgetCirFill.grid(row=0, sticky=W)
+        self.__propCirCentre = BooleanVar(value=False)
+        self.__widgetCirCentre = Checkbutton(self.__toolCir.getFrame(), text="Centre", variable=self.__propCirCentre)
+        self.__widgetCirCentre.grid(row=1, sticky=W)
 
         # Grids preset tool
         self.__toolSelected = self.__toolRec.select()
@@ -56,25 +61,29 @@ class paintWindow:
         self.__clickY, self.__clickX = 0, 0
         self.__pressing = False
 
+        # Properties (preset values)
+        self.__propFree = BooleanVar(value=False)
+        self.__propThickness = 5
+        self.__propColor = (255, 0, 0)
+        self.__propZoom = None
+        self.resizeToHalfScreen()  # determines suitable zoom ratio
         # Button icons
         self.__widgetNew = Button(self.__frameStatic, text="N", command=None)  # Featured
         self.__widgetOpen = Button(self.__frameStatic, text="O", command=None)  # Featured
         self.__widgetSave = Button(self.__frameStatic, text="S", command=self.save)
         self.__widgetSaveAs = Button(self.__frameStatic, text="SA", command=None)
         self.__widgetUndo = Button(self.__frameStatic, text="U", command=self.undo)
+        self.__widgetFree = Checkbutton(self.__frameStatic, text="Free hand", variable=self.__propFree)
         # Tool icons
         self.__widgetLineSelect = Button(self.__frameStatic, text="L", command=lambda: self.changeTool(self.__toolLine))
         self.__widgetRecSelect = Button(self.__frameStatic, text="R", command=lambda: self.changeTool(self.__toolRec))
-        # Properties (preset values)
-        self.__propThickness = 5
-        self.__propColor = (255, 0, 0)
-        self.__propZoom = None
-        self.resizeToHalfScreen()  # determines suitable zoom ratio
+        self.__widgetCirSelect = Button(self.__frameStatic, text="C", command=lambda: self.changeTool(self.__toolCir))
 
         self.autoGrid(self.__frameStatic, 32,
                       [[self.__widgetNew, self.__widgetOpen, self.__widgetSave, self.__widgetSaveAs],
                        [self.__widgetUndo],
-                       [self.__widgetLineSelect, self.__widgetRecSelect]])
+                       [self.__widgetLineSelect, self.__widgetRecSelect, self.__widgetCirSelect],
+                       [self.__widgetFree]])
 
         # creates Canvas (bd and highlightthickness avoids edge around canvas)
         self.__imgCanvas = Canvas(self.__frameImage, height=self.__imgHgt * self.__propZoom,
@@ -107,6 +116,8 @@ class paintWindow:
                 self.drawLine(eventY, eventX)
             elif self.__toolSelected == self.__toolRec:
                 self.drawRectangle(eventY, eventX)
+            elif self.__toolSelected == self.__toolCir:
+                self.drawCircle(eventY, eventX)
             self.updateImage()
 
     # saves changes
@@ -156,45 +167,89 @@ class paintWindow:
         self.__toolSelected.unGrid()
         self.__toolSelected = newTool.select()
 
-    def drawLine(self, eventY, eventX):
-        startY = self.__clickY
-        startX = self.__clickX
-        endY = min(max(eventY, 0), self.__imgHgt)
-        endX = min(max(eventX, 0), self.__imgWdh)
-        dY = abs(startY - eventY)
-        dX = abs(startX - eventX)
+    def upLftToDwnRigCoordinates(self, startY, startX, endY, endX):
+        Y = [startY, endY]
+        X = [startX, endX]
+        return min(Y), min(X), max(Y), max(X)
 
-        if not self.__propLineFree.get():
+    def straightCoordinates(self, startY, startX, endY, endX, onlyDiagonal=False):
+        # returns start and stop coordinates for straight drawing
+        dY = abs(startY - endY)
+        dX = abs(startX - endX)
+
+        if not onlyDiagonal:
             if dY >= 2 * dX:  # Line: |
                 endX = startX
+                return startY, startX, endY, endX
             elif dX >= 2 * dY:  # Line: -
                 endY = startY
+                return startY, startX, endY, endX
 
-            else:  # Line: / or \
-                length = round((dY + dX) / 2)
-                backslash = False
-                if (endY > startY and endX > startX) or (endY < startY and endX < startX):
-                    backslash = True  # Line: \ else /
-                    if endY < startY:  # Changes point so that the upper point is drawn first
-                        startY, startX = startY - length, startX - length
-                elif endY < startY:
-                    startY, startX = startY - length, startX + length
-                endY = startY + length
-                endX = startX + length if backslash else startX - length
+        # Diagonal lines: / or \
+        length = round((dY + dX) / 2)
+        # determines Y first and makes sure the upper point is drawn first
+        backslash = False
+        if (endY >= startY and endX >= startX) or (endY < startY and endX <= startX):  # Line: \
+            backslash = True
+            if endY < startY:
+                startY, startX = startY - length, startX - length  # switch if upward \
+        elif endY < startY:  # Line: /
+            startY, startX = startY - length, startX + length  # switch if upward /
+        endY = startY + length
+        # then determines X
+        if backslash:
+            endX = startX + length
+        else:
+            endX = startX - length
+        return startY, startX, endY, endX
+
+    def drawLine(self, eventY, eventX):
+        if self.__propFree.get():
+            startY = self.__clickY
+            startX = self.__clickX
+            endY = self.__imgHgt
+            endX = self.__imgWdh
+        else:
+            startY, startX, endY, endX = self.straightCoordinates(self.__clickY, self.__clickX, eventY, eventX)
 
         self.__imgDraw.line([startX, startY, endX, endY], fill=self.__propColor, width=self.__propThickness)
 
     def drawRectangle(self, eventY, eventX):
-        startX = min(self.__clickX, eventX)
-        endX = max(self.__clickX, eventX)
-        startY = min(self.__clickY, eventY)
-        endY = max(self.__clickY, eventY)
+        startY, startX, endY, endX = self.__clickY, self.__clickX, eventY, eventX
+        if not self.__propFree.get():
+            startY, startX, endY, endX = self.straightCoordinates(startY, startX, endY, endX, True)
+        startY, startX, endY, endX = self.upLftToDwnRigCoordinates(startY, startX, endY, endX)
+
+        thickness = min(self.__propThickness, max(abs(self.__clickY - eventY), abs(self.__clickX - eventX)))
         if self.__propRecFill.get():
             fill = self.__propColor
         else:
             fill = None
-        self.__imgDraw.rectangle([startX, startY, endX, endY], fill=fill, outline=self.__propColor,
-                                 width=self.__propThickness)
+
+        self.__imgDraw.rectangle([startX, startY, endX, endY], fill=fill, outline=self.__propColor, width=thickness)
+
+    def drawCircle(self, eventY, eventX):
+        startY, startX, endY, endX = self.__clickY, self.__clickX, eventY, eventX
+        if self.__propCirCentre.get():
+            dY = abs(startY - endY)
+            dX = abs(startX - endX)
+            if self.__propFree.get():
+                startY, startX, endY, endX = startY - dY, startX - dX, startY + dY, startX + dX
+            else:
+                r = round((dY + dX) / 2)
+                startY, startX, endY, endX = startY - r, startX - r, startY + r, startX + r
+        else:
+            if not self.__propFree.get():
+                startY, startX, endY, endX = self.straightCoordinates(startY, startX, endY, endX, True)
+            startY, startX, endY, endX = self.upLftToDwnRigCoordinates(startY, startX, endY, endX)
+
+        thickness = min(self.__propThickness, max(abs(self.__clickY - eventY), abs(self.__clickX - eventX)))
+        if self.__propCirFill.get():
+            fill = self.__propColor
+        else:
+            fill = None
+
+        self.__imgDraw.ellipse([startX, startY, endX, endY], fill=fill, outline=self.__propColor, width=thickness)
 
     def resizeToHalfScreen(self):
         screenwidth = self.__root.winfo_screenwidth()
