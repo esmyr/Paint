@@ -3,17 +3,27 @@ Made by Espen Myrset
 """
 
 import numpy as np
-from PIL import Image as Im, ImageTk, ImageDraw
+from PIL import Image as Im, ImageTk, ImageDraw, ImageGrab
 from tkinter import *
+from tkinter import filedialog
 
 """ Classes """
 
 
 class paintWindow:
-    def __init__(self, fileName):
+    def __init__(self, directory=None):
         self.__root = Tk()
-        self.__root.title("Paint")
         self.__root.geometry('+0+0')  # Top left position
+
+        # Saves directory and filename
+        self.__fileName = None
+        if directory is not None:
+            directory = makeStandardDirectory(directory, end=".png")
+            self.__fileName = getFileName(directory)
+            self.__root.title("Paint: {}".format(self.__fileName))
+        else:
+            self.__root.title("Paint: (untitled)")
+        self.__directory = directory
 
         # Root consists of 3 frames
         self.__frameStatic = Frame(self.__root)  # For static tools
@@ -40,18 +50,15 @@ class paintWindow:
         self.__widgetCirCentre.grid(row=1, sticky=W)
 
         # Grids preset tool
-        self.__toolSelected = self.__toolRec.select()
+        self.__toolSelected = self.__toolLine.select()
 
-        # Saves path and filename
-        if "/" in fileName:
-            self.__path = fileName[:fileName.rfind("/")]
-            fileName = fileName.replace("{}/".format(self.__path), "")
+        # main image (PIL image object)
+        if self.__fileName is not None:
+            self.__img = Im.open(self.__directory).convert("RGB")
+        elif ImageGrab.grabclipboard() is not None:
+            self.__img = ImageGrab.grabclipboard()
         else:
-            self.__path = None
-        self.__fileName = fileName
-
-        self.__img = Im.open("{}/{}".format(self.__path, self.__fileName)).convert(
-            "RGB")  # main image (PIL image object)
+            self.__img = Im.new('RGB', (600, 400), (255, 255, 255))
         self.__imgPrev = self.__img.copy()  # used for undo
         self.__imgDisplay = self.__img.copy()  # temporary image when drawing (displayed)
         self.__imgDraw = None  # draw reference that changes image object (initialized when moving mouse)
@@ -71,7 +78,7 @@ class paintWindow:
         self.__widgetNew = Button(self.__frameStatic, text="N", command=None)  # Featured
         self.__widgetOpen = Button(self.__frameStatic, text="O", command=None)  # Featured
         self.__widgetSave = Button(self.__frameStatic, text="S", command=self.save)
-        self.__widgetSaveAs = Button(self.__frameStatic, text="SA", command=None)
+        self.__widgetSaveAs = Button(self.__frameStatic, text="SA", command=self.saveAs)
         self.__widgetUndo = Button(self.__frameStatic, text="U", command=self.undo)
         self.__widgetFree = Checkbutton(self.__frameStatic, text="Free hand", variable=self.__propFree)
         # Tool icons
@@ -96,6 +103,7 @@ class paintWindow:
         self.__imgCanvas.bind("<Motion>", self.mouseMoveHandler)
         self.__imgCanvas.bind("<ButtonRelease>", self.mouseReleaseHandler)
         self.__root.bind("<Control-z>", self.undo)
+        self.__root.bind("<Control-s>", self.save)
 
         self.__root.mainloop()
 
@@ -155,8 +163,20 @@ class paintWindow:
             Canvas(frame, width=colSize, height=3, bd=0, highlightthickness=0, bg="black") \
                 .grid(column=col, row=lastRow)
 
-    def save(self):
-        self.__img.save("{}/New_{}".format(self.__path, self.__fileName))
+    def save(self, event=None):
+        if self.__directory is None:
+            self.saveAs()
+        else:
+            self.__img.save(self.__directory)
+            self.__root.title("Paint: {}".format(self.__fileName))
+
+    def saveAs(self):
+        directory = filedialog.asksaveasfilename(filetypes=[('PNG', '.png'), ('All files', '*')])
+        if directory is not None:
+            directory = makeStandardDirectory(directory, end=".png")
+            self.__fileName = getFileName(directory)
+            self.__directory = directory
+            self.save()
 
     def undo(self, event=None):
         self.__img, self.__imgPrev = self.__imgPrev, self.__img
@@ -174,8 +194,7 @@ class paintWindow:
 
     def straightCoordinates(self, startY, startX, endY, endX, onlyDiagonal=False):
         # returns start and stop coordinates for straight drawing
-        dY = abs(startY - endY)
-        dX = abs(startX - endX)
+        dY, dX = getCoordinateDifference(startY, startX, endY, endX)
 
         if not onlyDiagonal:
             if dY >= 2 * dX:  # Line: |
@@ -205,10 +224,7 @@ class paintWindow:
 
     def drawLine(self, eventY, eventX):
         if self.__propFree.get():
-            startY = self.__clickY
-            startX = self.__clickX
-            endY = self.__imgHgt
-            endX = self.__imgWdh
+            startY, startX, endY, endX = self.__clickY, self.__clickX, eventY, eventX
         else:
             startY, startX, endY, endX = self.straightCoordinates(self.__clickY, self.__clickX, eventY, eventX)
 
@@ -231,8 +247,7 @@ class paintWindow:
     def drawCircle(self, eventY, eventX):
         startY, startX, endY, endX = self.__clickY, self.__clickX, eventY, eventX
         if self.__propCirCentre.get():
-            dY = abs(startY - endY)
-            dX = abs(startX - endX)
+            dY, dX = getCoordinateDifference(startY, startX, endY, endX)
             if self.__propFree.get():
                 startY, startX, endY, endX = startY - dY, startX - dX, startY + dY, startX + dX
             else:
@@ -282,6 +297,27 @@ class Tool:
 
 """ Functions """
 
+
+def getFileName(directory):
+    if "\\" in directory:
+        return directory[directory.rfind("\\") + 1:]
+    else:
+        return directory
+
+
+def makeStandardDirectory(directory, end=""):
+    directory = directory.replace("/", "\\", directory.count("/"))
+    if len(end) > 0:
+        if directory[-len(end):] != end:
+            directory += end
+    return directory
+
+
+def getCoordinateDifference(Y1, X1, Y2, X2):
+    return abs(Y1 - Y2), abs(X1 - X2)
+
+
 """ Loose code """
 if __name__ == "__main__":
-    paintWindow("images/image1.png")
+    #paintWindow("images\\image1.png")
+    paintWindow()
