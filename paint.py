@@ -2,10 +2,9 @@
 Made by Espen Myrset
 """
 
-import numpy as np
 from PIL import Image as Im, ImageTk, ImageDraw, ImageGrab
 from math import sqrt
-from tkinter import *
+import tkinter as tk
 from tkinter import filedialog
 
 """ Classes """
@@ -13,7 +12,7 @@ from tkinter import filedialog
 
 class PaintWindow:
     def __init__(self, directory=None):
-        self.__root = Tk()
+        self.__root = tk.Tk()
         self.__root.geometry('+0+0')  # Top left position
 
         # Saves directory and filename
@@ -27,28 +26,24 @@ class PaintWindow:
         self.__directory = directory
 
         # Root consists of 3 frames
-        self.__frameStatic = Frame(self.__root)  # For static tools
-        self.__frameStatic.grid(column=0, row=0, sticky=(W, N, E, S))
-        self.__frameDynamic = Frame(self.__root)  # For dynamic tools
-        self.__frameDynamic.grid(column=0, row=1, sticky=(W, N, E, S))
-        self.__frameImage = Frame(self.__root)  # For image
-        self.__frameImage.grid(column=1, row=0, rowspan=2, sticky=(W, N, E, S))
-
-        # main image (PIL image object)
-        if self.__fileName is not None:
-            self.__img = Im.open(self.__directory).convert("RGB")
-        elif ImageGrab.grabclipboard() is not None:
-            self.__img = ImageGrab.grabclipboard()
-        else:
-            self.__img = Im.new('RGB', (600, 400), (255, 255, 255))
-        self.__imgPrev = self.__img.copy()  # used for undo
-        self.__imgDisplay = self.__img.copy()  # temporary image when drawing (displayed)
-        self.__imgDraw = None  # draw reference that changes image object (initialized when moving mouse)
-        self.__photoImg = None  # used in canvas (needs to be saved as variable)
-
-        self.__mouse = DragPoints()
+        self.__frameStatic = tk.Frame(self.__root)  # For static tools
+        self.__frameStatic.grid(column=0, row=0, sticky=tk.NSEW)
+        self.__frameDynamic = tk.Frame(self.__root)  # For dynamic tools
+        self.__frameDynamic.grid(column=0, row=1, sticky=tk.NSEW)
+        self.__frameImage = tk.Frame(self.__root)  # For image
+        self.__frameImage.grid(column=1, row=0, rowspan=2, sticky=tk.NSEW)
 
         self.globalProp = GlobalProperties(self)
+
+        self.image = Image(self, self.__frameImage)
+        if self.__fileName is not None:
+            self.image.makeImage(Im.open(self.__directory).convert("RGB"))
+        elif ImageGrab.grabclipboard() is not None:
+            self.image.makeImage(ImageGrab.grabclipboard())
+        else:
+            self.image.makeImage(Im.new('RGB', (600, 400), (255, 255, 255)))
+
+        self.__mouse = DragPoints()
 
         # Tools
         self.__toolLine = ToolLine(self.__frameDynamic, self.globalProp)
@@ -60,18 +55,14 @@ class PaintWindow:
 
         self.__widgetStatic = WidgetStatic(self, self.__frameStatic)
 
-        # creates Canvas (bd and highlightthickness avoids edge around canvas)
-        self.__imgCanvas = Canvas(self.__frameImage, height=self.imgHgt * self.globalProp.zoom,
-                                  width=self.imgWdh * self.globalProp.zoom, bd=0, highlightthickness=0)
-        self.__imgCanvas.grid()
-        self.updateImage()
-
         # bind actions
-        self.__imgCanvas.bind("<Button-1>", self.mousePressHandler)  # right click
-        self.__imgCanvas.bind("<Motion>", self.mouseMoveHandler)
-        self.__imgCanvas.bind("<ButtonRelease>", self.mouseReleaseHandler)
-        self.__root.bind("<Control-z>", self.undo)
+        self.image.canvas.bind("<Button-1>", self.mousePressHandler)  # right click
+        self.image.canvas.bind("<Motion>", self.mouseMoveHandler)
+        self.image.canvas.bind("<ButtonRelease>", self.mouseReleaseHandler)
+        self.__root.bind("<Control-z>", self.image.undo)
         self.__root.bind("<Control-s>", self.save)
+
+        self.image.displayImage()
 
         self.__root.mainloop()
 
@@ -81,11 +72,11 @@ class PaintWindow:
 
     @property
     def imgWdh(self):
-        return self.__img.size[0]
+        return self.image.imgWdh
 
     @property
     def imgHgt(self):
-        return self.__img.size[1]
+        return self.image.imgHgt
 
     @property
     def toolLine(self):
@@ -105,46 +96,32 @@ class PaintWindow:
     # makes and displays a new image whenever mouse is moving
     def mouseMoveHandler(self, event=None):
         if self.__mouse.dragging:
-            self.__imgDisplay = self.__img.copy()
-            self.__imgDraw = ImageDraw.Draw(self.__imgDisplay)
+            drawImage = self.image.makeDrawImage()
 
             self.__mouse.newEndPos(event.y // self.globalProp.zoom, event.x // self.globalProp.zoom)
             drawPositions = self.__mouse.copy()  # copy to be modified in drawing algorithms
-            self.globalProp.toolSelected.draw(drawPositions, self.__imgDraw)
-            self.updateImage()
+            self.globalProp.toolSelected.draw(drawPositions, drawImage)
+            self.image.displayImage()
 
     # saves changes
     def mouseReleaseHandler(self, event=None):
         self.__mouse.dragging = False
-        self.__imgPrev = self.__img.copy()
-        self.__img = self.__imgDisplay.copy()
-
-    # resize and display sketch image
-    def updateImage(self):
-        # PhotoImage used in canvas (resample=0 avoids filter when zooming/resizing)
-        self.__photoImg = ImageTk.PhotoImage(self.__imgDisplay.resize((
-            self.imgWdh * self.globalProp.zoom, self.imgHgt * self.globalProp.zoom), resample=0))
-        self.__imgCanvas.create_image(0, 0, image=self.__photoImg, anchor=NW)  # insert image in upper left corner
+        self.image.saveChanges()
 
     def save(self, event=None):
-        if self.__directory is None:
+        if self.__fileName is None:
             self.saveAs()
         else:
-            self.__img.save(self.__directory)
+            self.image.save(self.__directory)
             self.__root.title("Paint: {}".format(self.__fileName))
 
     def saveAs(self):
         directory = filedialog.asksaveasfilename(filetypes=[('PNG', '.png'), ('All files', '*')])
-        if directory is not None:
+        if directory is not "":
             directory = makeStandardDirectory(directory, end=".png")
             self.__fileName = getFileName(directory)
             self.__directory = directory
             self.save()
-
-    def undo(self, event=None):
-        self.__img, self.__imgPrev = self.__imgPrev, self.__img
-        self.__imgDisplay = self.__img
-        self.updateImage()
 
     def changeTool(self, newTool):
         self.globalProp.toolSelected.unGrid()
@@ -268,11 +245,11 @@ class DragPoints:
 # Global properties that can be changed and yields for multiple tools (with preset values)
 class GlobalProperties:
     def __init__(self, mainApp):
-        self.__free = BooleanVar(value=False)
+        self.__mainApp = mainApp
+        self.__free = tk.BooleanVar(value=False)
         self.thickness = 5
         self.color = (255, 0, 0)
-        self.zoom = None
-        self.resizeToHalfScreen(mainApp)  # determines suitable zoom ratio
+        self.zoom = 1
         self.toolSelected = None
 
     @property
@@ -287,16 +264,17 @@ class GlobalProperties:
     def free(self, value=False):
         self.__free.set(value)
 
-    def resizeToHalfScreen(self, mainApp):
-        screenwidth = mainApp.root.winfo_screenwidth()
-        screenheight = mainApp.root.winfo_screenheight()
-        self.zoom = round(max(1, min((screenheight / mainApp.imgHgt) // 2, (screenwidth / mainApp.imgWdh) // 2)))
+    def resizeToHalfScreen(self):
+        screenwidth = self.__mainApp.root.winfo_screenwidth()
+        screenheight = self.__mainApp.root.winfo_screenheight()
+        self.zoom = round(max(1, min((screenheight / self.__mainApp.imgHgt) // 2,
+                                     (screenwidth / self.__mainApp.imgWdh) // 2)))
 
 
 # Tool (to be used with inheritance for the different tools) to represent tools with a dynamic tool frame
 class Tool:
     def __init__(self, parentFrame, globalProp):
-        self.__frame = Frame(parentFrame)  # used for tools to grid to dynamic frame
+        self.__frame = tk.Frame(parentFrame)  # used for tools to grid to dynamic frame
         self.__globalProp = globalProp
 
     @property
@@ -308,7 +286,7 @@ class Tool:
         return self.__globalProp
 
     def grid(self):
-        self.__frame.grid(sticky=(W, N, E, S))
+        self.__frame.grid(sticky=tk.NSEW)
 
     def unGrid(self):
         self.__frame.grid_remove()
@@ -333,8 +311,8 @@ class ToolLine(Tool):
 class ToolRectangle(Tool):
     def __init__(self, parentFrame, globalProp):
         super().__init__(parentFrame, globalProp)
-        self.__fill = BooleanVar(value=False)
-        self.__widgetFill = Checkbutton(self.frame, text="Fill", variable=self.__fill)
+        self.__fill = tk.BooleanVar(value=False)
+        self.__widgetFill = tk.Checkbutton(self.frame, text="Fill", variable=self.__fill)
         self.__widgetFill.grid()
 
     def draw(self, drawPositions, drawRef):
@@ -354,12 +332,12 @@ class ToolRectangle(Tool):
 class ToolCircle(Tool):
     def __init__(self, parentFrame, globalProp):
         super().__init__(parentFrame, globalProp)
-        self.__fill = BooleanVar(value=False)
-        self.__widgetFill = Checkbutton(self.frame, text="Fill", variable=self.__fill)
-        self.__widgetFill.grid(row=0, sticky=W)
-        self.__propCentre = BooleanVar(value=False)
-        self.__widgetCentre = Checkbutton(self.frame, text="Centre", variable=self.__propCentre)
-        self.__widgetCentre.grid(row=1, sticky=W)
+        self.__fill = tk.BooleanVar(value=False)
+        self.__widgetFill = tk.Checkbutton(self.frame, text="Fill", variable=self.__fill)
+        self.__widgetFill.grid(row=0, sticky=tk.W)
+        self.__propCentre = tk.BooleanVar(value=False)
+        self.__widgetCentre = tk.Checkbutton(self.frame, text="Centre", variable=self.__propCentre)
+        self.__widgetCentre.grid(row=1, sticky=tk.W)
 
     def draw(self, drawPositions, drawRef):
         if self.__propCentre.get():
@@ -382,16 +360,16 @@ class ToolCircle(Tool):
 class WidgetStatic:
     def __init__(self, mainApp, frameStatic):
         # Button icons
-        self.__widgetNew = Button(frameStatic, text="N", command=None)  # Featured
-        self.__widgetOpen = Button(frameStatic, text="O", command=None)  # Featured
-        self.__widgetSave = Button(frameStatic, text="S", command=mainApp.save)
-        self.__widgetSaveAs = Button(frameStatic, text="SA", command=mainApp.saveAs)
-        self.__widgetUndo = Button(frameStatic, text="U", command=mainApp.undo)
-        self.__widgetFree = Checkbutton(frameStatic, text="Free hand", variable=mainApp.globalProp.freeVar)
+        self.__widgetNew = tk.Button(frameStatic, text="N", command=None)  # Featured
+        self.__widgetOpen = tk.Button(frameStatic, text="O", command=None)  # Featured
+        self.__widgetSave = tk.Button(frameStatic, text="S", command=mainApp.save)
+        self.__widgetSaveAs = tk.Button(frameStatic, text="SA", command=mainApp.saveAs)
+        self.__widgetUndo = tk.Button(frameStatic, text="U", command=mainApp.image.undo)
+        self.__widgetFree = tk.Checkbutton(frameStatic, text="Free hand", variable=mainApp.globalProp.freeVar)
         # Tool icons
-        self.__widgetLineSelect = Button(frameStatic, text="L", command=lambda: mainApp.changeTool(mainApp.toolLine))
-        self.__widgetRecSelect = Button(frameStatic, text="R", command=lambda: mainApp.changeTool(mainApp.toolRec))
-        self.__widgetCirSelect = Button(frameStatic, text="C", command=lambda: mainApp.changeTool(mainApp.toolCir))
+        self.__widgetLineSelect = tk.Button(frameStatic, text="L", command=lambda: mainApp.changeTool(mainApp.toolLine))
+        self.__widgetRecSelect = tk.Button(frameStatic, text="R", command=lambda: mainApp.changeTool(mainApp.toolRec))
+        self.__widgetCirSelect = tk.Button(frameStatic, text="C", command=lambda: mainApp.changeTool(mainApp.toolCir))
 
         self.autoGrid(frameStatic, 32,
                       [[self.__widgetNew, self.__widgetOpen, self.__widgetSave, self.__widgetSaveAs],
@@ -413,13 +391,67 @@ class WidgetStatic:
             columnsLeft = colMax
             for col, element in enumerate(list):
                 span = columnsLeft // (len(list) - col)  # smallest buttons to the left
-                element.grid(row=rowNr, column=colMax - columnsLeft, columnspan=span, sticky=(W, N, E, S))
+                element.grid(row=rowNr, column=colMax - columnsLeft, columnspan=span, sticky=tk.NSEW)
                 columnsLeft = columnsLeft - span
             lastRow += 1
 
         for col in range(colMax):  # Insert canvas to make even column spacing and line at end of toolbar
-            Canvas(frame, width=colSize, height=3, bd=0, highlightthickness=0, bg="black") \
+            tk.Canvas(frame, width=colSize, height=3, bd=0, highlightthickness=0, bg="black") \
                 .grid(column=col, row=lastRow)
+
+
+class Image:
+    def __init__(self, mainApp, frame):
+        self.__mainApp = mainApp
+        self.img = None
+        self.__imgPrev = None  # used for undo
+        self.__imgDisplay = None  # temporary image when drawing (displayed)
+        self.imgDraw = None  # draw reference that changes image object (initialized when moving mouse)
+        self.__photoImg = None  # used in canvas (needs to be saved as variable)
+        self.canvas = None  # creates Canvas
+        self.__frame = frame
+
+    @property
+    def imgWdh(self):
+        return self.img.size[0]
+
+    @property
+    def imgHgt(self):
+        return self.img.size[1]
+
+    def makeImage(self, image):
+        self.img = image
+        self.__imgPrev = self.img.copy()
+        self.__imgDisplay = self.img.copy()
+        self.__mainApp.globalProp.resizeToHalfScreen()  # determines suitable zoom ratio
+        # (bd and highlightthickness avoids edge around canvas)
+        self.canvas = tk.Canvas(self.__frame, height=self.imgHgt * self.__mainApp.globalProp.zoom,
+                                width=self.imgWdh * self.__mainApp.globalProp.zoom, bd=0, highlightthickness=0)
+        self.canvas.grid()
+
+    # resize and display sketch image
+    def displayImage(self):
+        # PhotoImage used in canvas (resample=0 avoids filter when zooming/resizing)
+        self.__photoImg = ImageTk.PhotoImage(self.__imgDisplay.resize((
+            self.imgWdh * self.__mainApp.globalProp.zoom, self.imgHgt * self.__mainApp.globalProp.zoom), resample=0))
+        self.canvas.create_image(0, 0, image=self.__photoImg, anchor=tk.NW)  # insert image in upper left corner
+
+    def makeDrawImage(self):
+        self.__imgDisplay = self.img.copy()
+        self.imgDraw = ImageDraw.Draw(self.__imgDisplay)
+        return self.imgDraw
+
+    def saveChanges(self):
+        self.__imgPrev = self.img.copy()
+        self.img = self.__imgDisplay.copy()
+
+    def undo(self, event=None):
+        self.img, self.__imgPrev = self.__imgPrev, self.img
+        self.__imgDisplay = self.img
+        self.displayImage()
+
+    def save(self, directory):
+        self.img.save(directory)
 
 
 """ Functions """
